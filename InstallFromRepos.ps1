@@ -3,6 +3,7 @@ param(
     [string]$InstallDirectory = $PSScriptRoot,
     [ValidateSet('Standard', 'Lite')][string]$Edition = 'Standard',
     [switch]$ApplyPreferredSettings,
+    [switch]$InstallPawnIO,
     [switch]$SkipBuild,
     [switch]$SkipStart,
     [switch]$ValidateOnly
@@ -22,6 +23,26 @@ try {
     $hostOutput = Join-Path $PSScriptRoot "Bin\x64\$configuration"
     $pluginOutput = Join-Path $PluginRepository 'bin\x64\Release\CodexUsage.dll'
     $preset = Join-Path $PSScriptRoot 'config-presets\preferred'
+    $pawnIoSetup = Join-Path $PSScriptRoot 'OpenHardwareMonitorApi\PawnIO_setup.exe'
+    $hardwareDependencyFiles = @(
+        'LibreHardwareMonitorLib.dll', 'HidSharp.dll', 'DiskInfoToolkit.dll', 'RAMSPDToolkit-NDD.dll',
+        'BlackSharp.Core.dll', 'System.Memory.dll', 'System.Runtime.CompilerServices.Unsafe.dll',
+        'System.Numerics.Vectors.dll', 'System.Buffers.dll'
+    )
+    if ($Edition -eq 'Standard') {
+        foreach ($dependency in $hardwareDependencyFiles) {
+            $dependencyPath = Join-Path $PSScriptRoot "OpenHardwareMonitorApi\$dependency"
+            if (-not (Test-Path -LiteralPath $dependencyPath -PathType Leaf)) { throw "Hardware monitoring dependency is missing: $dependencyPath" }
+        }
+    }
+    if ($InstallPawnIO) {
+        if ($Edition -ne 'Standard') { throw 'PawnIO installation is only available for the Standard edition.' }
+        if (-not (Test-Path -LiteralPath $pawnIoSetup -PathType Leaf)) { throw "PawnIO setup is missing: $pawnIoSetup" }
+        $pawnIoHash = (Get-FileHash -LiteralPath $pawnIoSetup -Algorithm SHA256).Hash
+        if ($pawnIoHash -ne '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032') { throw 'PawnIO setup SHA-256 does not match the pinned official 2.2.0 installer.' }
+        $pawnIoSignature = Get-AuthenticodeSignature -LiteralPath $pawnIoSetup
+        if ($pawnIoSignature.Status -ne 'Valid' -or $pawnIoSignature.SignerCertificate.Subject -notmatch 'CN=namazso\.eu') { throw 'PawnIO setup Authenticode signature is not valid for namazso.eu.' }
+    }
     foreach ($path in @($solution, $pluginProject, (Join-Path $preset 'config.ini'), (Join-Path $preset 'global_cfg.ini'))) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required source file is missing: $path" }
     }
@@ -91,6 +112,21 @@ public static class TrafficMonitorInstallWindow {
     }
     if (Get-Process -Name TrafficMonitor -ErrorAction SilentlyContinue) { throw 'Exit all TrafficMonitor processes before installing.' }
 
+    if ($InstallPawnIO) {
+        $pawnIoService = Get-Service -Name 'PawnIO' -ErrorAction SilentlyContinue
+        $pawnIoVersion = $null
+        $pawnIoUninstall = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO' -ErrorAction SilentlyContinue
+        if ($pawnIoUninstall.DisplayVersion) { try { $pawnIoVersion = [version]$pawnIoUninstall.DisplayVersion } catch {} }
+        if (-not $pawnIoService -or -not $pawnIoVersion -or $pawnIoVersion -lt [version]'2.2.0') {
+            Write-Host 'Installing the signed PawnIO 2.2.0 hardware driver (one-time system setup).'
+            $pawnIoProcess = Start-Process -FilePath $pawnIoSetup -ArgumentList '-install -silent' -Wait -PassThru
+            if ($pawnIoProcess.ExitCode -ne 0 -and $pawnIoProcess.ExitCode -ne 3010) { throw "PawnIO setup failed with exit code $($pawnIoProcess.ExitCode)." }
+            if (-not (Get-Service -Name 'PawnIO' -ErrorAction SilentlyContinue)) { throw 'PawnIO setup finished, but the PawnIO driver service is not installed.' }
+        } else {
+            Write-Host "PawnIO $($pawnIoUninstall.DisplayVersion) is already installed; no driver changes needed."
+        }
+    }
+
     if (Test-Path -LiteralPath $InstallDirectory) {
         $backupRoot = Join-Path $env:LOCALAPPDATA 'TrafficMonitor-install-backups'
         $backup = Join-Path $backupRoot (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
@@ -115,12 +151,20 @@ public static class TrafficMonitorInstallWindow {
         Write-Host "Previous installation backup: $backup"
     }
     New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
+    foreach ($legacyDriver in @((Join-Path $InstallDirectory 'TrafficMonitor.sys'), (Join-Path $hostOutput 'TrafficMonitor.sys'))) {
+        if (Test-Path -LiteralPath $legacyDriver -PathType Leaf) {
+            Remove-Item -LiteralPath $legacyDriver -Force
+            Write-Host "Removed the legacy WinRing0 driver artifact: $legacyDriver"
+        }
+    }
     Copy-Item -LiteralPath (Join-Path $hostOutput 'TrafficMonitor.exe') -Destination $InstallDirectory -Force
     foreach ($file in Get-ChildItem -LiteralPath $hostOutput -Filter '*.dll' -File) {
         Copy-Item -LiteralPath $file.FullName -Destination $InstallDirectory -Force
     }
     if ($Edition -eq 'Standard') {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'OpenHardwareMonitorApi\LibreHardwareMonitorLib.dll') -Destination $InstallDirectory -Force
+        foreach ($dependency in $hardwareDependencyFiles) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot "OpenHardwareMonitorApi\$dependency") -Destination $InstallDirectory -Force
+        }
     }
     foreach ($folder in @('language', 'skins')) {
         $destination = Join-Path $InstallDirectory $folder

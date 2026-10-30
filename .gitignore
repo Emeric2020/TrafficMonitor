@@ -298,6 +298,8 @@ __pycache__/
 /TrafficMonitor.exe
 /TrafficMonitor.sys
 /*.dll
+!/OpenHardwareMonitorApi/*.dll
+!/OpenHardwareMonitorApi/PawnIO_setup.exe
 /plugins/
 /language/
 /skins/

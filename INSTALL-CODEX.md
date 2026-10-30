@@ -20,8 +20,9 @@
 1. 确认 Windows x64、Git、Windows PowerShell 5.1 可用。此脚本暂不处理 x86/ARM64 原生安装。
 2. 检查 Visual Studio 2022 或 Build Tools：C++ 桌面开发、MSVC v143 x86/x64、对应 MFC/ATL、Windows SDK。标准版还需要 .NET Framework 4.7.2 targeting pack（项目的 `TargetFrameworkVersion` 是 `v4.7.2`）。用 Visual Studio Installer 补齐缺失组件；不要因缺 SDK 随意修改项目工具集或目标框架。
 3. 安装/修复与 x64 对应的 Visual C++ 运行库；宿主使用动态 MFC。标准版运行需要管理员权限和 .NET Framework 4.7.2 或兼容的新版本。Lite 可通过 `-Edition Lite` 安装，不提供温度监控。
-4. 如果已有 TrafficMonitor，检查当前进程、安装目录、便携模式、AppData 配置和开机启动项。优先在原安装目录更新，保留历史数据和无关插件。不要另建一份默认配置让用户误以为原配置丢失。
-5. 检查两个 Git 工作区。已有目录先确认远程 URL 和分支，保留未提交修改，正常 fetch 后按实际状态更新；不要 reset、强制 checkout、clean 或强制推送。
+4. 标准版硬件监控使用 LibreHardwareMonitor 0.9.6，不再携带旧版 WinRing0。若需读取 CPU/主板低层传感器，首次安装时添加 `-InstallPawnIO`，安装脚本会验证随仓库提供的 PawnIO 2.2.0 官方签名和 SHA-256，并执行一次性系统驱动安装；后续检测到 2.2.0 后会跳过。Lite 版无需 PawnIO。
+5. 如果已有 TrafficMonitor，检查当前进程、安装目录、便携模式、AppData 配置和开机启动项。优先在原安装目录更新，保留历史数据和无关插件。不要另建一份默认配置让用户误以为原配置丢失。
+6. 检查两个 Git 工作区。已有目录先确认远程 URL 和分支，保留未提交修改，正常 fetch 后按实际状态更新；不要 reset、强制 checkout、clean 或强制推送。
 
 ## 首次获取源码
 
@@ -44,7 +45,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Projects\TrafficMonit
 首次安装并明确应用用户的首选配置：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Projects\TrafficMonitor\InstallFromRepos.ps1 -PluginRepository D:\Projects\TrafficMonitorPlugins -ApplyPreferredSettings
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Projects\TrafficMonitor\InstallFromRepos.ps1 -PluginRepository D:\Projects\TrafficMonitorPlugins -ApplyPreferredSettings -InstallPawnIO
 ```
 
 参数说明：
@@ -53,6 +54,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Projects\TrafficMonit
 - `-Edition Lite`：构建宿主 `Release (lite) | x64`。
 - 插件始终独立构建 `Release | x64`。
 - `-ApplyPreferredSettings`：备份后覆盖安装目录的两个 INI 文件，应用仓库配置。
+- `-InstallPawnIO`：仅用于标准版，安装随仓库固定的 PawnIO 2.2.0 官方签名驱动；只在首次缺少该驱动或版本过旧时执行，不会每次更新都重装。
 - 升级时通常省略 `-ApplyPreferredSettings`，保留安装目录的现有配置。新安装目录没有两个 INI 时自动采用首选配置。若旧配置使用 AppData，继续保留该模式，未经用户要求不要强行切换。
 - `-SkipBuild`：只在确认本机两个对应构建产物已存在且最新时使用，不要把其他架构或其他电脑的产物混入。
 - `-SkipStart`：安装后暂不启动，便于静态检查。
@@ -60,7 +62,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Projects\TrafficMonit
 
 脚本先构建两个仓库，成功后向当前 TrafficMonitor 主窗口发送 `WM_CLOSE`，等待正常保存配置并退出。默认目标是宿主仓库根目录；若宿主已提权，安装脚本也要在管理员 PowerShell 中运行；遇到拒绝访问时不要强杀，以免丢失设置和历史。若源码目录的旧构建宿主正在运行导致链接器锁文件，先正常退出它再构建。
 
-默认安装到宿主仓库根目录时，脚本只备份根目录的 EXE、DLL、INI、`history*.dat*`、`TrafficMonitor.VisualElementsManifest.xml`，以及 `language`、`skins`、`Logo`、`plugins` 运行目录，保存到 `%LOCALAPPDATA%\TrafficMonitor-install-backups\时间戳`；`config-presets` 和源码不会进入这份备份。显式指定其他安装目录时仍执行原有整目录备份。更新采用合并复制，不删除目标目录独有的文件，不覆盖流量历史，不删除其他插件。独立插件会自动复制，并核对 SHA256。语言和内置皮肤来自宿主仓库；标准版同时复制硬件监控依赖 DLL。新安装使用便携模式后，`config.ini`、`global_cfg.ini` 与 EXE 同目录。
+默认安装到宿主仓库根目录时，脚本只备份根目录的 EXE、DLL、INI、`history*.dat*`、`TrafficMonitor.VisualElementsManifest.xml`，以及 `language`、`skins`、`Logo`、`plugins` 运行目录，保存到 `%LOCALAPPDATA%\TrafficMonitor-install-backups\时间戳`；`config-presets` 和源码不会进入这份备份。显式指定其他安装目录时仍执行原有整目录备份。更新采用合并复制，不覆盖流量历史，不删除其他插件；同时移除旧 LibreHardwareMonitor 遗留的 `TrafficMonitor.sys`。独立插件会自动复制，并核对 SHA256。语言和内置皮肤来自宿主仓库；标准版同时复制 LibreHardwareMonitor 0.9.6 及所需依赖 DLL。新安装使用便携模式后，`config.ini`、`global_cfg.ini` 与 EXE 同目录。
 
 ## 必须完成的验收
 

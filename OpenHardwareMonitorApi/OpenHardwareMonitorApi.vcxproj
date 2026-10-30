@@ -199,6 +199,30 @@
     <Reference Include="LibreHardwareMonitorLib">
       <HintPath>LibreHardwareMonitorLib.dll</HintPath>
     </Reference>
+    <Reference Include="HidSharp">
+      <HintPath>HidSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="DiskInfoToolkit">
+      <HintPath>DiskInfoToolkit.dll</HintPath>
+    </Reference>
+    <Reference Include="RAMSPDToolkit-NDD">
+      <HintPath>RAMSPDToolkit-NDD.dll</HintPath>
+    </Reference>
+    <Reference Include="BlackSharp.Core">
+      <HintPath>BlackSharp.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>System.Buffers.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
