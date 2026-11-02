@@ -815,6 +815,15 @@ void CTaskBarDlg::CalculateWindowSize()
 
     int item_count = static_cast<int>(m_item_widths.size());
 
+    const auto minimum_row_height = [&](const ItemWidthInfo& entry) {
+        auto* item = entry.PluginItem();
+        auto* plugin = item ? theApp.m_plugins.GetPluginByItem(item) : nullptr;
+        int height = 0;
+        if (plugin && plugin->GetAPIVersion() >= 4 && item->IsCustomDraw())
+            item->OnItemInfo(IPluginItem::IIT_TASKBAR_MIN_ROW_HEIGHT, &height, nullptr);
+        return DPI((std::clamp)(height, 0, 64));
+    };
+
     auto last_window_width{ m_window_width };
     auto last_window_height{ m_window_height };
 
@@ -825,6 +834,14 @@ void CTaskBarDlg::CalculateWindowSize()
             m_window_height = TASKBAR_WND_HEIGHT;
         else
             m_window_height = TASKBAR_WND_HEIGHT * 2 / 3;
+
+        // Text above a narrow quota track needs a little more height than a plain
+        // text row. Honor opt-in requests within the existing taskbar's bounds.
+        int requested_height = m_window_height;
+        for (const auto& entry : m_item_widths)
+            requested_height = max(requested_height, minimum_row_height(entry) * (horizontal_arrange ? 1 : 2));
+        if (m_rcTaskbar.Height() > DPI(2))
+            m_window_height = max(m_window_height, min(requested_height, m_rcTaskbar.Height() - DPI(2)));
 
         m_window_width = 0;
         if (theApp.m_taskbar_data.horizontal_arrange)   //水平排列时
@@ -906,6 +923,23 @@ void CTaskBarDlg::CalculateWindowSize()
                         // 设置第二个项目的矩形区域
                         m_item_rects[*iter].SetRect(current_x, y_pos_down, current_x + col_width, y_pos_down + item_height);
 
+                        // Opted-in custom items from the same plugin share one physical
+                        // border pixel. Keep the pair inside its existing column height.
+                        auto* upper = first_iter->PluginItem();
+                        auto* lower = iter->PluginItem();
+                        auto* upper_plugin = upper ? theApp.m_plugins.GetPluginByItem(upper) : nullptr;
+                        if (upper_plugin && upper_plugin->GetAPIVersion() >= 4 && lower
+                            && theApp.m_plugins.GetPluginByItem(lower) == upper_plugin
+                            && upper->IsCustomDraw() && lower->IsCustomDraw()
+                            && upper->OnItemInfo(IPluginItem::IIT_TASKBAR_SHARED_BORDER, nullptr, nullptr)
+                            && lower->OnItemInfo(IPluginItem::IIT_TASKBAR_SHARED_BORDER, nullptr, nullptr))
+                        {
+                            m_item_rects[*first_iter].top = 0;
+                            m_item_rects[*first_iter].bottom = item_height + 1;
+                            m_item_rects[*iter].top = item_height;
+                            m_item_rects[*iter].bottom = m_window_height;
+                        }
+
                         current_x += col_width + item_space;
                         has_first_item = false;
                     }
@@ -940,6 +974,7 @@ void CTaskBarDlg::CalculateWindowSize()
             int item_height = TASKBAR_WND_HEIGHT / 2;
             if (iter->IsDoubleLineExclusive())
                 item_height = TASKBAR_WND_HEIGHT;
+            item_height = max(item_height, minimum_row_height(*iter));
 
             //计算矩形区域
             item_rect.top = m_window_height;
